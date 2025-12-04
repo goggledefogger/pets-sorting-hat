@@ -67,7 +67,7 @@ app.post('/api/tts', async (req, res) => {
           input: { ssml: ssmlText },
           voice: {
             languageCode: 'en-GB',
-            name: 'en-GB-Studio-B', // Premium Studio voice
+            name: 'en-GB-Neural2-D', // Neural2 voice - more natural than Wavenet
             ssmlGender: 'MALE'
           },
           audioConfig: {
@@ -213,7 +213,7 @@ IMPORTANT: Return ONLY the JSON object. No markdown. No asterisks. Break the spe
               input: { ssml: ssmlText },
               voice: {
                 languageCode: 'en-GB',
-                name: 'en-GB-Studio-B', // Premium Studio voice - deeper and more expressive
+                name: 'en-GB-Neural2-D',
                 ssmlGender: 'MALE'
               },
               audioConfig: {

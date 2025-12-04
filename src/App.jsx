@@ -44,6 +44,8 @@ function App() {
   const [finalSpeechIndex, setFinalSpeechIndex] = useState(-1);
   const [showingFinalSpeech, setShowingFinalSpeech] = useState(false);
   const [audioSrc, setAudioSrc] = useState(null);
+  const [hatPosition, setHatPosition] = useState({ x: 0, y: 0 }); // {x, y} offset
+  const [visualMode, setVisualMode] = useState('procedural'); // 'custom', 'procedural', 'png'
   const audioRef = useRef(new Audio());
 
   // Real-time lip sync
@@ -59,15 +61,29 @@ function App() {
       if (nextIndex < thinkingPhrases.length) {
         setPhraseIndex(nextIndex);
         setHatMessage(thinkingPhrases[nextIndex]);
-      } else if (finalSpeechParts.length > 0) {
-        // Done with phrases, start final speech parts
-        setShowingFinalSpeech(true);
-        setFinalSpeechIndex(0);
-        const firstPart = finalSpeechParts[0];
-        setHatMessage(firstPart.text);
-        if (firstPart.audio) setAudioSrc(firstPart.audio);
+      } else {
+        // Done with phrases. Check if we have final speech ready.
+        if (finalSpeechParts && finalSpeechParts.length > 0) {
+          // Add a small delay before starting the final speech for dramatic effect
+          // and to ensure we don't overlap or rush.
+          setHatMessage(null); // Clear bubble briefly
+
+          setTimeout(() => {
+            setShowingFinalSpeech(true);
+            setFinalSpeechIndex(0);
+            const firstPart = finalSpeechParts[0];
+            setHatMessage(firstPart.text || "Hmm...");
+            if (firstPart.audio) setAudioSrc(firstPart.audio);
+          }, 1000); // 1 second pause
+        } else {
+           // If no speech parts yet, we wait.
+           // If API returned but empty, we reveal.
+           if (house) {
+             setStep('REVEAL');
+             setHatMessage(house.name.toUpperCase() + "!");
+           }
+        }
       }
-      // else: waiting for API
     }
     // Phase 2: Final Speech Parts
     else {
@@ -75,7 +91,7 @@ function App() {
       if (nextPartIndex < finalSpeechParts.length) {
         setFinalSpeechIndex(nextPartIndex);
         const nextPart = finalSpeechParts[nextPartIndex];
-        setHatMessage(nextPart.text);
+        setHatMessage(nextPart.text || "...");
         if (nextPart.audio) setAudioSrc(nextPart.audio);
       } else {
         // Final speech done, go to reveal
@@ -93,8 +109,11 @@ function App() {
 
   // Watch for finalSpeech arrival if we're stuck waiting
   useEffect(() => {
+    // Only trigger if we are at the end of thinking phrases, not speaking, and have data
     if (step === 'THINKING' && !showingFinalSpeech && finalSpeechParts.length > 0 && phraseIndex === thinkingPhrases.length - 1 && !isSpeaking) {
-      // We were waiting for API, and now it's here, and the last phrase finished speaking
+      // Check if we are already showing the final speech (to avoid double trigger due to async state)
+      // Actually, showingFinalSpeech check above handles it.
+      // We just call advanceSequence, which handles the transition.
       advanceSequence();
     }
   }, [finalSpeechParts, step, showingFinalSpeech, phraseIndex, isSpeaking]);
@@ -236,7 +255,39 @@ function App() {
     setFinalSpeechParts([]);
     setFinalSpeechIndex(-1);
     setAudioSrc(null);
+    setAudioSrc(null);
+    setHatPosition({ x: 0, y: 0 });
     audioRef.current.pause();
+  };
+
+  const handleHatDragStart = (e) => {
+    if (step !== 'VOICE') return; // Only draggable in VOICE step
+    e.preventDefault();
+    const clientX = e.clientX || e.touches[0].clientX;
+    const clientY = e.clientY || e.touches[0].clientY;
+    const startX = hatPosition.x;
+    const startY = hatPosition.y;
+
+    const onMove = (moveEvent) => {
+      const curX = moveEvent.clientX || moveEvent.touches[0].clientX;
+      const curY = moveEvent.clientY || moveEvent.touches[0].clientY;
+      setHatPosition({
+        x: startX + (curX - clientX),
+        y: startY + (curY - clientY)
+      });
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onUp);
   };
 
   // Determine hat state for animation
@@ -246,7 +297,21 @@ function App() {
 
   return (
     <div className="app-container">
-      {step !== 'REVEAL' && (
+      {/* Visual Mode Selector */}
+      <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000 }}>
+        <select
+          value={visualMode}
+          onChange={(e) => setVisualMode(e.target.value)}
+          style={{ padding: '5px', borderRadius: '5px', background: 'rgba(255,255,255,0.8)', border: 'none', cursor: 'pointer' }}
+        >
+          <option value="custom">Custom SVG</option>
+          <option value="procedural">Procedural SVG</option>
+          <option value="png">Original PNG</option>
+        </select>
+      </div>
+
+      {/* Default Top Hat - Only for INTRO and CAMERA */}
+      {(step === 'INTRO' || step === 'CAMERA') && (
         <div style={{ marginBottom: '2rem' }}>
           <SortingHat
             state={hatState}
@@ -254,6 +319,7 @@ function App() {
             audioSrc={audioSrc}
             isSpeaking={isSpeaking}
             mouthOpenAmount={mouthOpenAmount}
+            visualMode={visualMode}
           />
         </div>
       )}
@@ -292,13 +358,103 @@ function App() {
           </div>
         )}
 
-        {step === 'VOICE' && (
-          <VoiceInput onVoiceInput={handleVoiceInput} onSkip={handleVoiceInput} />
-        )}
+        {(step === 'VOICE' || step === 'THINKING') && (
+          <div className="interaction-area">
+            {/* Pet Photo with Hat Overlay */}
+            {/* Pet Photo with Hat Overlay */}
+            <div
+              className="pet-overlay-container"
+              style={{
+                position: 'relative',
+                maxWidth: '500px',
+                margin: '120px auto 2rem',
+                // Removed overflow: hidden from here so hat can extend out
+              }}
+            >
+              {/* Image Container (Clipped) */}
+              <div style={{
+                borderRadius: '15px',
+                overflow: 'hidden',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                position: 'relative', // Ensure it takes up space
+                zIndex: 1
+              }}>
+                {petPhoto && <img src={petPhoto} alt="Pet" style={{ width: '100%', display: 'block' }} />}
+              </div>
 
-        {step === 'THINKING' && (
-          <div className="thinking">
-            <p>The Hat is delving into your pet's mind...</p>
+              {/* Draggable Hat Overlay (Can extend outside) */}
+              <div
+                onMouseDown={handleHatDragStart}
+                onTouchStart={handleHatDragStart}
+                style={{
+                  position: 'absolute',
+                  top: '10%',
+                  left: '50%',
+                  transform: `translate(-50%, 0) translate(${hatPosition.x}px, ${hatPosition.y}px)`,
+                  cursor: step === 'VOICE' ? 'grab' : 'default',
+                  zIndex: 20, // Above image
+                  width: '180px',
+                  touchAction: 'none'
+                }}
+              >
+                <SortingHat
+                  state={hatState}
+                  message={null}
+                  audioSrc={audioSrc}
+                  isSpeaking={isSpeaking}
+                  mouthOpenAmount={mouthOpenAmount}
+                  size={180}
+                  visualMode={visualMode}
+                />
+                {step === 'VOICE' && (
+                  <div style={{
+                    textAlign: 'center',
+                    background: 'rgba(0,0,0,0.7)',
+                    color: '#fff',
+                    padding: '5px 10px',
+                    borderRadius: '10px',
+                    fontSize: '0.8rem',
+                    marginTop: '-20px',
+                    pointerEvents: 'none'
+                  }}>
+                    Drag me! 👆
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Controls / Text */}
+            {step === 'VOICE' && (
+              <VoiceInput onVoiceInput={handleVoiceInput} onSkip={handleVoiceInput} />
+            )}
+
+            {step === 'THINKING' && (
+              <div className="thinking" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div className="thinking-text" style={{
+                  fontSize: '1.5rem',
+                  marginBottom: '1rem',
+                  maxWidth: '600px',
+                  width: '90%',
+                  background: 'rgba(0, 0, 0, 0.6)',
+                  padding: '1.5rem',
+                  borderRadius: '15px',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                  backdropFilter: 'blur(5px)',
+                  color: '#fff',
+                  fontFamily: '"Times New Roman", serif',
+                  fontStyle: 'italic',
+                  lineHeight: '1.4',
+                  minHeight: '120px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                    "{hatMessage}"
+                </div>
+                <p style={{ opacity: 0.7, fontSize: '0.9rem', letterSpacing: '1px', textTransform: 'uppercase' }}>The Hat is delving into your pet's mind...</p>
+              </div>
+            )}
           </div>
         )}
 

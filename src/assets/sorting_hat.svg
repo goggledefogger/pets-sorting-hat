@@ -1,0 +1,117 @@
+<svg viewBox="0 0 400 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradient for the hat body -->
+    <linearGradient id="hatGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B4513"/>
+      <stop offset="50%" style="stop-color:#654321"/>
+      <stop offset="100%" style="stop-color:#3d2814"/>
+    </linearGradient>
+
+    <!-- Shadow gradient -->
+    <linearGradient id="shadowGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d1810"/>
+      <stop offset="100%" style="stop-color:#1a0f0a"/>
+    </linearGradient>
+
+    <!-- Brim gradient -->
+    <linearGradient id="brimGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#6B3E26"/>
+      <stop offset="100%" style="stop-color:#3d2814"/>
+    </linearGradient>
+
+    <!-- Filter for worn texture -->
+    <filter id="worn">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+  <!-- Background (optional - remove for transparent) -->
+  <rect width="400" height="450" fill="#1a1a2e" opacity="0"/>
+
+  <!-- Hat brim - back part -->
+  <ellipse cx="200" cy="380" rx="160" ry="35" fill="url(#brimGradient)" stroke="#2d1810" stroke-width="2"/>
+
+  <!-- Main hat body -->
+  <path d="M60 370
+           Q80 200, 140 120
+           Q170 70, 180 40
+           Q185 20, 195 10
+           Q210 5, 220 25
+           Q240 60, 250 100
+           Q280 50, 290 80
+           Q300 120, 290 180
+           Q340 250, 340 370
+           Z"
+        fill="url(#hatGradient)"
+        stroke="#2d1810"
+        stroke-width="2"/>
+
+  <!-- Hat wrinkles and folds -->
+  <path d="M100 300 Q150 280, 180 310 Q210 340, 250 300 Q280 270, 310 320"
+        fill="none" stroke="#3d2814" stroke-width="3" opacity="0.6"/>
+  <path d="M90 250 Q130 230, 170 260 Q200 280, 240 250"
+        fill="none" stroke="#3d2814" stroke-width="2" opacity="0.5"/>
+  <path d="M130 200 Q160 180, 200 210 Q230 230, 270 200"
+        fill="none" stroke="#3d2814" stroke-width="2" opacity="0.5"/>
+  <path d="M160 150 Q185 135, 220 160 Q245 175, 270 150"
+        fill="none" stroke="#3d2814" stroke-width="2" opacity="0.4"/>
+
+  <!-- Droopy top fold -->
+  <path d="M195 10 Q250 30, 280 80 Q260 60, 230 50 Q200 40, 195 10"
+        fill="#5a3520" opacity="0.5"/>
+
+  <!-- The "face" - mouth/opening that forms when it speaks -->
+  <path d="M110 310
+           Q130 340, 180 345
+           Q230 350, 280 330
+           Q260 360, 200 365
+           Q140 360, 110 310
+           Z"
+        fill="url(#shadowGradient)"/>
+
+  <!-- Mouth inner detail -->
+  <path d="M130 325 Q170 350, 220 345 Q260 340, 270 325 Q240 355, 180 355 Q140 350, 130 325"
+        fill="#0f0805"/>
+
+  <!-- Upper lip wrinkle -->
+  <path d="M115 310 Q160 295, 200 300 Q250 305, 275 325"
+        fill="none" stroke="#8B4513" stroke-width="3"/>
+
+  <!-- Eye wrinkles/folds that suggest eyes -->
+  <path d="M140 260 Q155 250, 175 260 Q165 275, 145 270 Z"
+        fill="#3d2814" opacity="0.7"/>
+  <path d="M220 255 Q240 245, 260 255 Q250 270, 225 268 Z"
+        fill="#3d2814" opacity="0.7"/>
+
+  <!-- Patches -->
+  <path d="M280 180 L310 170 L320 200 L290 210 Z"
+        fill="#7a4528" stroke="#4a2818" stroke-width="1" stroke-dasharray="3,2"/>
+  <path d="M100 220 L130 210 L135 240 L105 250 Z"
+        fill="#6a3a20" stroke="#4a2818" stroke-width="1" stroke-dasharray="3,2"/>
+  <circle cx="170" cy="130" r="15" fill="#7a4020" stroke="#4a2818" stroke-width="1" stroke-dasharray="2,2"/>
+
+  <!-- Stitching details -->
+  <path d="M280 180 L295 205" stroke="#2a1508" stroke-width="1" stroke-dasharray="4,3"/>
+  <path d="M100 220 L125 245" stroke="#2a1508" stroke-width="1" stroke-dasharray="4,3"/>
+  <path d="M155 130 L185 130" stroke="#2a1508" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- Long vertical stitch -->
+  <path d="M200 100 L195 180 L205 260" stroke="#2a1508" stroke-width="1" stroke-dasharray="5,4"/>
+
+  <!-- Hat brim - front part -->
+  <path d="M40 375 Q100 410, 200 415 Q300 410, 360 375 Q300 395, 200 400 Q100 395, 40 375"
+        fill="url(#brimGradient)" stroke="#2d1810" stroke-width="2"/>
+
+  <!-- Brim shadow -->
+  <ellipse cx="200" cy="390" rx="140" ry="20" fill="#1a0f0a" opacity="0.3"/>
+
+  <!-- Brim wear marks -->
+  <path d="M80 385 Q90 390, 100 385" stroke="#4a2818" stroke-width="2" fill="none"/>
+  <path d="M300 382 Q310 388, 320 383" stroke="#4a2818" stroke-width="2" fill="none"/>
+
+  <!-- Additional texture lines -->
+  <path d="M150 80 Q175 65, 200 85" stroke="#5a3520" stroke-width="1" opacity="0.5" fill="none"/>
+  <path d="M85 330 Q95 320, 110 330" stroke="#5a3520" stroke-width="1" opacity="0.5" fill="none"/>
+  <path d="M285 310 Q300 300, 315 315" stroke="#5a3520" stroke-width="1" opacity="0.5" fill="none"/>
+</svg>

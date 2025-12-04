@@ -1,64 +1,31 @@
 import React from 'react';
+import HatVisualCustom from './hat-visuals/HatVisualCustom';
+import HatVisualProcedural from './hat-visuals/HatVisualProcedural';
+import HatVisualPng from './hat-visuals/HatVisualPng';
 
-const SortingHat = ({ state, message, audioSrc, isSpeaking, mouthOpenAmount = 0 }) => {
+const SortingHat = ({ state, message, audioSrc, isSpeaking, mouthOpenAmount = 0, size = 400, visualMode = 'custom' }) => {
   // state: 'idle', 'thinking', 'speaking'
   // mouthOpenAmount: 0.0 to 1.0 based on volume
 
-  // Mouth Path Interpolation
-  // Base width: 40 to 60 (center 50)
-  // Y position: 80
-  // Control point Y: 80 (closed) to 105 (open)
-  // We use a quadratic bezier curve for the mouth
-  const mouthControlY = 80 + (mouthOpenAmount * 25);
-  const mouthPath = `M 35 85 Q 50 ${mouthControlY} 65 85`;
-
-  // Eye Squint/Blink
-  // When speaking loudly, eyes might squint a bit (scale Y down)
-  // Or just random blinking? For now, let's squint on loud volume for expression
-  const eyeScaleY = 1 - (mouthOpenAmount * 0.4);
-
   // Dynamic scale for "bounce" effect based on volume
-  const scale = 1 + (mouthOpenAmount * 0.05);
+  const scale = 1 + (mouthOpenAmount * 0.03);
+
+  const renderVisual = () => {
+    switch (visualMode) {
+      case 'procedural':
+        return <HatVisualProcedural state={state} mouthOpenAmount={mouthOpenAmount} scale={scale} size={size} />;
+      case 'png':
+        return <HatVisualPng state={state} mouthOpenAmount={mouthOpenAmount} size={size} />;
+      case 'custom':
+      default:
+        return <HatVisualCustom state={state} scale={scale} size={size} />;
+    }
+  };
 
   return (
-    <div className="sorting-hat-container" style={{ position: 'relative', height: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="sorting-hat-container" style={{ position: 'relative', height: `${size}px`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
 
-      {/* SVG Hat */}
-      <svg width="300" height="300" viewBox="0 0 100 100" className={state === 'thinking' ? 'floating' : ''} style={{
-          filter: state === 'thinking' ? 'drop-shadow(0 0 10px gold)' : 'drop-shadow(0 5px 5px rgba(0,0,0,0.5))',
-          transition: 'filter 0.5s ease, transform 0.05s ease',
-          transform: state === 'thinking' ? undefined : `scale(${scale})`,
-          overflow: 'visible'
-      }}>
-        {/* Tip Group (Swaying) */}
-        <g className="hat-tip-sway" style={{ transformOrigin: '50% 45px' }}>
-            {/* Main Cone Tip */}
-            <path d="M 50 5 C 40 20, 30 35, 20 45 L 80 45 C 70 35, 60 20, 50 5 Z" fill="#3e2723" stroke="#2d1b15" strokeWidth="1" />
-            {/* Fold/Wrinkle */}
-            <path d="M 35 30 Q 50 35 65 30" fill="none" stroke="#2d1b15" strokeWidth="0.5" />
-        </g>
-
-        {/* Base/Brim */}
-        <ellipse cx="50" cy="50" rx="40" ry="10" fill="#3e2723" stroke="#2d1b15" strokeWidth="1" />
-
-        {/* Face Area (Lower Cone) */}
-        <path d="M 20 45 L 25 85 Q 50 95 75 85 L 80 45 Z" fill="#3e2723" stroke="#2d1b15" strokeWidth="1" />
-
-        {/* Eyes Group */}
-        <g transform={`translate(50, 65) scale(1, ${eyeScaleY}) translate(-50, -65)`}>
-            {/* Left Eye */}
-            <ellipse cx="40" cy="65" rx="3" ry="4" fill="#1a100e" />
-            {/* Right Eye */}
-            <ellipse cx="60" cy="65" rx="3" ry="4" fill="#1a100e" />
-            {/* Eyebrows */}
-            <path d="M 35 60 L 45 62" stroke="#1a100e" strokeWidth="1" />
-            <path d="M 65 60 L 55 62" stroke="#1a100e" strokeWidth="1" />
-        </g>
-
-        {/* Mouth */}
-        <path d={mouthPath} fill="#1a100e" stroke="#1a100e" strokeWidth="2" strokeLinecap="round" />
-
-      </svg>
+      {renderVisual()}
 
       {message && (
         <div style={{
@@ -70,7 +37,9 @@ const SortingHat = ({ state, message, audioSrc, isSpeaking, mouthOpenAmount = 0 
           position: 'relative',
           maxWidth: '300px',
           fontFamily: 'sans-serif',
-          fontWeight: 'bold'
+          fontWeight: 'bold',
+          zIndex: 10,
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
         }} className={`speech-bubble ${state === 'thinking' ? 'thinking-text' : ''}`}>
           {message}
           <div style={{
