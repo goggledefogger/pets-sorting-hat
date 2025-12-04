@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import SortingHat from './components/SortingHat';
 import CameraCapture from './components/CameraCapture';
 import ImageUpload from './components/ImageUpload';
 import VoiceInput from './components/VoiceInput';
 import HouseReveal from './components/HouseReveal';
-import { sortPet } from './utils/sortingLogic';
+import { sortPet, HOUSES } from './utils/sortingLogic';
+import { useAudioLipSync } from './hooks/useAudioLipSync';
 
 function App() {
   const [step, setStep] = useState('INTRO'); // INTRO, CAMERA, VOICE, THINKING, REVEAL
@@ -12,8 +13,10 @@ function App() {
   const [petTraits, setPetTraits] = useState('');
   const [house, setHouse] = useState(null);
   const [hatMessage, setHatMessage] = useState("Welcome to the Hogwarts Pet Sorting Ceremony!");
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
   const handleStart = () => {
+    setHasUserInteracted(true);
     setStep('CAMERA');
     setHatMessage("First, let me get a good look at you...");
   };
@@ -30,105 +33,165 @@ function App() {
   };
 
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [thinkingSequence, setThinkingSequence] = useState([]);
-  const [sequenceIndex, setSequenceIndex] = useState(-1);
-
-  // Handle the thinking sequence
-  useEffect(() => {
-    if (step === 'THINKING' && sequenceIndex >= 0 && sequenceIndex < thinkingSequence.length) {
-      setHatMessage(thinkingSequence[sequenceIndex]);
-    } else if (step === 'THINKING' && sequenceIndex >= thinkingSequence.length && thinkingSequence.length > 0) {
-       // Sequence finished, move to reveal
-       const result = sortPet(petTraits);
-       setHouse(result);
-       setStep('REVEAL');
-       setHatMessage("");
-       setThinkingSequence([]);
-       setSequenceIndex(-1);
-    }
-  }, [step, sequenceIndex, thinkingSequence, petTraits]);
-
+  const [thinkingPhrases] = useState([
+    "Hmm... let me see...",
+    "Analyzing the aura...",
+    "Interesting features...",
+    "Digging into the soul..."
+  ]);
+  const [phraseIndex, setPhraseIndex] = useState(-1);
+  const [finalSpeechParts, setFinalSpeechParts] = useState([]); // Array of { text, audio }
+  const [finalSpeechIndex, setFinalSpeechIndex] = useState(-1);
+  const [showingFinalSpeech, setShowingFinalSpeech] = useState(false);
   const [audioSrc, setAudioSrc] = useState(null);
   const audioRef = useRef(new Audio());
 
-  // TTS / Audio Effect
-  useEffect(() => {
-    if (hatMessage) {
-      window.speechSynthesis.cancel();
-      audioRef.current.pause();
+  // Real-time lip sync
+  const mouthOpenAmount = useAudioLipSync(audioRef, isSpeaking);
 
-      // Check if this message corresponds to the final speech AND we have audio
-      // The final speech is the last item in thinkingSequence
-      const isFinalSpeech = thinkingSequence.length > 0 && hatMessage === thinkingSequence[thinkingSequence.length - 1];
+  // Progress through thinking phases, then final speech parts, then reveal
+  const advanceSequence = () => {
+    if (step !== 'THINKING') return;
 
-      if (isFinalSpeech && audioSrc) {
-        // Play Custom Audio
-        audioRef.current.src = audioSrc;
-        audioRef.current.onplay = () => setIsSpeaking(true);
-        audioRef.current.onended = () => {
-          setIsSpeaking(false);
-          if (step === 'THINKING') setSequenceIndex(prev => prev + 1);
-        };
-        audioRef.current.onerror = () => {
-           console.error("Audio playback error, falling back to TTS");
-           // Fallback to TTS logic below if needed, or just skip
-           setIsSpeaking(false);
-           if (step === 'THINKING') setSequenceIndex(prev => prev + 1);
-        };
-        audioRef.current.play().catch(e => console.error("Play error:", e));
-      } else {
-        // Use Browser TTS for thinking phrases
-        const utterance = new SpeechSynthesisUtterance(hatMessage);
-        utterance.rate = 0.9;
-        utterance.pitch = 0.8;
-
-        setIsSpeaking(true);
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => {
-          setIsSpeaking(false);
-          if (step === 'THINKING') setSequenceIndex(prev => prev + 1);
-        };
-        utterance.onerror = () => {
-          setIsSpeaking(false);
-          if (step === 'THINKING') setSequenceIndex(prev => prev + 1);
-        };
-        window.speechSynthesis.speak(utterance);
+    // Phase 1: Thinking Phrases
+    if (!showingFinalSpeech) {
+      const nextIndex = phraseIndex + 1;
+      if (nextIndex < thinkingPhrases.length) {
+        setPhraseIndex(nextIndex);
+        setHatMessage(thinkingPhrases[nextIndex]);
+      } else if (finalSpeechParts.length > 0) {
+        // Done with phrases, start final speech parts
+        setShowingFinalSpeech(true);
+        setFinalSpeechIndex(0);
+        const firstPart = finalSpeechParts[0];
+        setHatMessage(firstPart.text);
+        if (firstPart.audio) setAudioSrc(firstPart.audio);
       }
-    } else {
-      setIsSpeaking(false);
-      window.speechSynthesis.cancel();
-      audioRef.current.pause();
+      // else: waiting for API
     }
-  }, [hatMessage, step, audioSrc, thinkingSequence]);
+    // Phase 2: Final Speech Parts
+    else {
+      const nextPartIndex = finalSpeechIndex + 1;
+      if (nextPartIndex < finalSpeechParts.length) {
+        setFinalSpeechIndex(nextPartIndex);
+        const nextPart = finalSpeechParts[nextPartIndex];
+        setHatMessage(nextPart.text);
+        if (nextPart.audio) setAudioSrc(nextPart.audio);
+      } else {
+        // Final speech done, go to reveal
+        setStep('REVEAL');
+        // Announce the house name!
+        if (house) {
+          setHatMessage(house.name.toUpperCase() + "!");
+          setAudioSrc(null); // Clear previous audio so it fetches new TTS
+        } else {
+          setHatMessage("");
+        }
+      }
+    }
+  };
+
+  // Watch for finalSpeech arrival if we're stuck waiting
+  useEffect(() => {
+    if (step === 'THINKING' && !showingFinalSpeech && finalSpeechParts.length > 0 && phraseIndex === thinkingPhrases.length - 1 && !isSpeaking) {
+      // We were waiting for API, and now it's here, and the last phrase finished speaking
+      advanceSequence();
+    }
+  }, [finalSpeechParts, step, showingFinalSpeech, phraseIndex, isSpeaking]);
+
+  // TTS: Play audio for current hatMessage
+  useEffect(() => {
+    if (!hatMessage || !hasUserInteracted) {
+      return;
+    }
+
+    // Cancel any ongoing audio
+    audioRef.current.pause();
+    audioRef.current.currentTime = 0;
+
+    const playAudio = (src) => {
+      audioRef.current.src = src;
+      audioRef.current.onplay = () => setIsSpeaking(true);
+      audioRef.current.onended = () => {
+        setIsSpeaking(false);
+        // Only advance sequence if we are in THINKING mode
+        if (step === 'THINKING') {
+          advanceSequence();
+        }
+      };
+      audioRef.current.onerror = () => {
+        console.error("Audio error");
+        setIsSpeaking(false);
+        if (step === 'THINKING') {
+          advanceSequence();
+        }
+      };
+      audioRef.current.play().catch(e => {
+        console.error("Play error:", e);
+        setIsSpeaking(false);
+        // Still advance on error after a delay
+        if (step === 'THINKING') {
+          setTimeout(advanceSequence, 500);
+        }
+      });
+    };
+
+    // Use pre-loaded audio for final speech, otherwise fetch
+    if (showingFinalSpeech && audioSrc) {
+      playAudio(audioSrc);
+    } else {
+      setIsSpeaking(true);
+      fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: hatMessage })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.audio) {
+            playAudio(data.audio);
+          } else {
+            // If no audio, wait a bit then advance (if in thinking mode)
+            if (step === 'THINKING') {
+              setTimeout(advanceSequence, 2000); // Longer delay for reading
+            } else {
+              setIsSpeaking(false);
+            }
+          }
+        })
+        .catch(() => {
+          if (step === 'THINKING') {
+            setTimeout(advanceSequence, 2000);
+          } else {
+            setIsSpeaking(false);
+          }
+        });
+    }
+  }, [hatMessage, hasUserInteracted, step, showingFinalSpeech, audioSrc]);
 
   const startSorting = async (traits) => {
+    // Reset state for new sorting
+    setPhraseIndex(-1);
+    setShowingFinalSpeech(false);
+    setFinalSpeechParts([]);
+    setFinalSpeechIndex(-1);
+    setAudioSrc(null);
+
     setStep('THINKING');
-    setHatMessage("Hmm... let me see...");
-    setThinkingSequence([
-      "Analyzing the aura...",
-      "Interesting features...",
-      "Digging into the soul..."
-    ]);
-    setSequenceIndex(0);
+
+    // Start the sequence immediately with the first phrase
+    setPhraseIndex(0);
+    setHatMessage(thinkingPhrases[0]);
 
     try {
       // Prepare form data
       const formData = new FormData();
       formData.append('traits', traits);
 
-      // If it's a mock photo, we might need to handle it differently or send the URL
-      // For now, if it's a blob/file, append it. If it's a URL (mock), we might need to fetch it first or handle in backend.
-      // MVP: If petPhoto is a data URL (from camera), convert to blob.
-
       if (petPhoto && petPhoto.startsWith('data:')) {
         const response = await fetch(petPhoto);
         const blob = await response.blob();
         formData.append('image', blob, 'pet.jpg');
-      } else if (petPhoto && !petPhoto.startsWith('http')) {
-         // It's likely a blob url from URL.createObjectURL or similar if we implemented that way,
-         // but our ImageUpload returns a dataUrl or blob url.
-         // Let's assume for now we handle the dataURL case which is most common for this app.
-         // If it's the mock path '/sorting_hat.png', we skip sending image for now or handle gracefully.
       }
 
       const response = await fetch('/api/sort-pet', {
@@ -139,29 +202,25 @@ function App() {
       if (!response.ok) throw new Error('Sorting failed');
 
       const data = await response.json();
+      console.log('[API] Received:', { house: data.house, parts: data.speechParts?.length });
 
-      // Update the sequence to end with the actual speech
-      setThinkingSequence(prev => [
-        ...prev,
-        data.speech // The AI generated speech
-      ]);
-
-      // If we have audio, we need to play it when the speech text is shown
-      // For now, let's store it in a ref or state to be accessed by the effect
-      if (data.audio) {
-        setAudioSrc(data.audio);
+      // Store final speech parts
+      if (data.speechParts) {
+        setFinalSpeechParts(data.speechParts);
+      } else if (data.speech) {
+        // Fallback for old API response format
+        setFinalSpeechParts([{ text: data.speech, audio: data.audio }]);
       }
 
-      // Store the house for the reveal (will be triggered when sequence finishes)
-      // We need a way to pass this to the effect or store it in a ref/state that doesn't trigger immediate reveal
-      // The current effect logic reveals when sequence ends.
-      // We can store it in a temp state or just setHouse (which doesn't trigger reveal until step changes, but step is THINKING)
-      setHouse(data.house);
+      // Convert house string from API to house object
+      const houseKey = data.house.toUpperCase();
+      const houseObj = HOUSES[houseKey] || HOUSES.GRYFFINDOR;
+      setHouse(houseObj);
 
     } catch (error) {
       console.error("Error sorting:", error);
       setHatMessage("Hmm, my vision is cloudy. I'll just say... GRYFFINDOR!");
-      setHouse('Gryffindor');
+      setHouse(HOUSES.GRYFFINDOR);
       setStep('REVEAL');
     }
   };
@@ -172,9 +231,12 @@ function App() {
     setPetTraits('');
     setHouse(null);
     setHatMessage("Welcome to the Hogwarts Pet Sorting Ceremony!");
-    setThinkingSequence([]);
-    setSequenceIndex(-1);
+    setPhraseIndex(-1);
+    setShowingFinalSpeech(false);
+    setFinalSpeechParts([]);
+    setFinalSpeechIndex(-1);
     setAudioSrc(null);
+    audioRef.current.pause();
   };
 
   // Determine hat state for animation
@@ -186,11 +248,17 @@ function App() {
     <div className="app-container">
       {step !== 'REVEAL' && (
         <div style={{ marginBottom: '2rem' }}>
-          <SortingHat state={hatState} message={hatMessage} audioSrc={audioSrc} isSpeaking={isSpeaking} />
+          <SortingHat
+            state={hatState}
+            message={hatMessage}
+            audioSrc={audioSrc}
+            isSpeaking={isSpeaking}
+            mouthOpenAmount={mouthOpenAmount}
+          />
         </div>
       )}
 
-      <div className="content-area">
+      <div className="content-area fade-in" key={step}>
         {step === 'INTRO' && (
           <div className="intro">
             <h1 className="magical-text">Pet Sorting Hat</h1>
