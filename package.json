@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,7 +13,8 @@
     "preview": "vite preview",
     "server": "node server.js",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "setup-secrets": "./setup_secrets.sh"
   },
   "homepage": "https://goggledefogger.github.io/pets-sorting-hat",
   "dependencies": {

@@ -1,9 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
-  base: '/pets-sorting-hat/',
+  // base: '/pets-sorting-hat/', // Commented out for Firebase Hosting (root domain)
   plugins: [react()],
   server: {
     proxy: {

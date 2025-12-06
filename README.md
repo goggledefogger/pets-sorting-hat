@@ -14,15 +14,44 @@ This magical application uses **AI Vision (Gemini 2.5 Flash)** and **Neural Text
 
 ## 🚀 Deployment
 
-### GitHub Pages (Frontend Only)
-This project is configured for deployment to GitHub Pages.
+### Option 1: Firebase (Recommended)
+This approach deploys the **Frontend** (Hosting) and **Backend** (Functions) together, ensuring the AI and Voice features work perfectly while keeping your API keys secure.
 
-**⚠️ IMPORTANT LIMITATION**:
-The deployed version on GitHub Pages is **STATIC ONLY**.
-- The AI Sorting and Text-to-Speech features require the backend server (`server.js`) to be running.
-- On GitHub Pages, the app will load, but sorting functionality will **FAIL** unless you configure the frontend to point to a separately hosted backend (e.g., on Render/Railway).
+1.  **Install Firebase CLI**:
+    ```bash
+    npm install -g firebase-tools
+    ```
 
-**To Deploy:**
+2.  **Login and Init**:
+    ```bash
+    firebase login
+    firebase init
+    # Select: Hosting, Functions
+    # Project: Create new or use existing
+    # Hosting: Public dir = "dist", SPA = Yes
+    ```
+
+3.  **Set Secrets**:
+    Securely upload your API keys from your local `.env` file to Firebase:
+    ```bash
+    # Ensure you are logged in and have selected a project (firebase use)
+    npm run setup-secrets
+    ```
+
+    *Alternatively, set them manually:*
+    ```bash
+    firebase functions:secrets:set GEMINI_API_KEY
+    firebase functions:secrets:set GOOGLE_CLOUD_API_KEY
+    ```
+
+4.  **Deploy**:
+    ```bash
+    npm run build
+    firebase deploy
+    ```
+
+### Option 2: GitHub Pages (Frontend Only)
+**⚠️ LIMITATION**: GitHub Pages is static-only. The AI/Voice features will **NOT** work unless you host the backend properly.
 ```bash
 npm run deploy
 ```
@@ -38,23 +67,24 @@ npm run deploy
 2.  **Install Dependencies**
     ```bash
     npm install
+    # Install backend dependencies if running locally independent of Firebase
+    npm install express cors dotenv multer @google/generative-ai @google-cloud/text-to-speech
     ```
 
-3.  **Configure Environment Variables**
+3.  **Configure Environment Variables (Local)**
     Create a `.env` file in the root directory:
     ```env
     # Required for AI Analysis
     GEMINI_API_KEY=your_gemini_api_key_here
 
-    # Required for Text-to-Speech (Optional: falls back to Gemini key if permissible, but tailored for Google Cloud)
+    # Required for Text-to-Speech
     GOOGLE_CLOUD_API_KEY=your_google_cloud_api_key_here
     ```
 
-4.  **Start the Development Server**
-    Run both the backend (API) and frontend (Vite):
-    ```bash
-    # Open two terminals:
+4.  **Start Development**
+    You can run the full stack locally using the Express server for simplicity:
 
+    ```bash
     # Terminal 1 (Backend)
     npm run server
 
@@ -62,13 +92,18 @@ npm run deploy
     npm run dev
     ```
 
+    *Alternatively, tests Firebase Functions locally:*
+    ```bash
+    firebase emulators:start
+    ```
+
 ## 🧩 Architecture
 
-- **Frontend**: React + Vite
-- **Backend**: Express.js (handles API proxying and secret storage)
-- **AI Model**: Gemini 2.5 Flash (via `@google/generative-ai`)
+- **Frontend**: React + Vite (Hosted on Firebase Hosting)
+- **Backend (Prod)**: Firebase Cloud Functions (Serverless v2)
+- **Backend (Dev)**: Express.js (for simple local dev) OR Firebase Emulators
+- **AI Model**: Gemini 2.5 Flash
 - **TTS**: Google Cloud Text-to-Speech (Neural2 voices)
-- **Styling**: Vanilla CSS with comprehensive animations
 
 ## 📜 License
 MIT
