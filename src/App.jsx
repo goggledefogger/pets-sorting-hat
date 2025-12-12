@@ -343,7 +343,7 @@ function App() {
         <div style={{ marginBottom: '2rem' }}>
           <SortingHat
             state={hatState}
-            message={hatMessage}
+            message={showSubtitles ? hatMessage : null}
             audioSrc={audioSrc}
             isSpeaking={isSpeaking}
             mouthOpenAmount={mouthOpenAmount}
