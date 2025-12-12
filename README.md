@@ -74,11 +74,8 @@ npm run deploy
 3.  **Configure Environment Variables (Local)**
     Create a `.env` file in the root directory:
     ```env
-    # Required for AI Analysis
+    # Required for AI Analysis and Text-to-Speech
     GEMINI_API_KEY=your_gemini_api_key_here
-
-    # Required for Text-to-Speech
-    GOOGLE_CLOUD_API_KEY=your_google_cloud_api_key_here
     ```
 
 4.  **Start Development**
@@ -102,8 +99,9 @@ npm run deploy
 - **Frontend**: React + Vite (Hosted on Firebase Hosting)
 - **Backend (Prod)**: Firebase Cloud Functions (Serverless v2)
 - **Backend (Dev)**: Express.js (for simple local dev) OR Firebase Emulators
-- **AI Model**: Gemini 2.5 Flash
-- **TTS**: Google Cloud Text-to-Speech (Neural2 voices)
+- **AI Model**: Gemini 2.5 Flash (for vision + text analysis)
+- **TTS**: Gemini 2.5 Flash TTS (native audio generation with natural language style prompts)
+- **Audio Caching**: Static phrases are pre-generated on server startup for instant playback
 
 ## 📜 License
 MIT

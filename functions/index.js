@@ -21,35 +21,86 @@ const fs = require("fs");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const googleCloudApiKey = defineSecret("GOOGLE_CLOUD_API_KEY");
 
-// Helper: Convert speech to SSML
-function speechToSSML(text) {
-  let ssml = text
-    .replace(/\*/g, '')
-    .replace(/GRYFFINDOR!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">GRYFFINDOR!</emphasis></prosody>')
-    .replace(/SLYTHERIN!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">SLYTHERIN!</emphasis></prosody>')
-    .replace(/RAVENCLAW!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">RAVENCLAW!</emphasis></prosody>')
-    .replace(/HUFFLEPUFF!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">HUFFLEPUFF!</emphasis></prosody>')
-    .replace(/\[sigh\]/gi, '<break time="200ms"/><prosody pitch="-1st" rate="slow">hmm</prosody><break time="300ms"/>')
-    .replace(/Hmm\.\.\./gi, '<prosody pitch="-2st" rate="0.7" volume="soft">Hmm...</prosody><break time="400ms"/>')
-    .replace(/Let me see\.\.\./gi, '<prosody pitch="-1st" rate="0.8">Let me see...</prosody><break time="300ms"/>')
-    .replace(/\[chuckle\]/gi, '<break time="100ms"/><prosody pitch="+1st">heh</prosody><break time="200ms"/>')
-    .replace(/\[pause\]/gi, '<break time="600ms"/>')
-    .replace(/\[short pause\]/gi, '<break time="400ms"/>')
-    .replace(/\[uhm\]/gi, '<break time="200ms"/>')
-    .replace(/\[slowly\]\s*([^.!?]+[.!?])/gi, '<prosody rate="slow">$1</prosody>')
-    .replace(/\[excited\]\s*([^.!?]+[.!?])/gi, '<prosody rate="fast" pitch="+2st">$1</prosody>')
-    .replace(/\[whisper\]\s*([^.!?]+[.!?])/gi, '<prosody volume="soft" rate="slow">$1</prosody>')
-    .replace(/\.\.\./g, '<break time="500ms"/>')
-    .replace(/EXACTLY/gi, '<emphasis level="strong">exactly</emphasis>')
-    .replace(/YES/gi, '<emphasis level="moderate">Yes</emphasis>');
+// Sorting Hat TTS Voice Configuration for Gemini 2.5 Flash TTS
+const SORTING_HAT_TTS_PROMPT = `# AUDIO PROFILE: The Sorting Hat
+## Ancient, Theatrical Wizard Artifact
 
-  return `<speak><prosody rate="110%" pitch="-2st">${ssml}</prosody></speak>`;
+## THE SCENE
+A grand candlelit hall at Hogwarts. The ancient Sorting Hat sits atop a creature's head, reading their very soul. The atmosphere is magical, suspenseful, and slightly whimsical.
+
+### DIRECTOR'S NOTES
+Style:
+- Theatrical and dramatic with a heart of gold
+- Dry British wit, slightly pompous but warm
+- Build suspense naturally, savoring each revelation
+- "Vocal smile" when amused, gravitas when pronouncing judgment
+- Deep, resonant voice befitting a 1,000-year-old magical artifact
+
+Pacing:
+- Deliberate and unhurried for observations ("Hmm... most curious...")
+- Quicken with excitement during discoveries
+- Slow, dramatic pause before revealing the house name
+- Crescendo to a powerful, triumphant proclamation for house announcements (GRYFFINDOR!, SLYTHERIN!, etc.)
+
+Accent: Refined British, ancient and timeless
+
+#### TRANSCRIPT
+`;
+
+// Generate TTS audio using Gemini 2.5 Flash TTS
+async function generateGeminiTTS(text, genAI) {
+  try {
+    // Clean up any markup tags from the text (they were for SSML, not needed now)
+    const cleanText = text
+      .replace(/\[sigh\]/gi, '*sighs thoughtfully*')
+      .replace(/\[chuckle\]/gi, '*chuckles*')
+      .replace(/\[pause\]/gi, '...')
+      .replace(/\[short pause\]/gi, '...')
+      .replace(/\[uhm\]/gi, 'um')
+      .replace(/\[slowly\]/gi, '')
+      .replace(/\[excited\]/gi, '')
+      .replace(/\[whisper\]/gi, '')
+      .replace(/\*/g, '');
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash-preview-tts"
+    });
+
+    const result = await model.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: SORTING_HAT_TTS_PROMPT + cleanText }]
+      }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: 'Charon' // Deep, dramatic voice for the Sorting Hat
+            }
+          }
+        }
+      }
+    });
+
+    const response = await result.response;
+    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+    if (audioData) {
+      // Gemini TTS returns PCM audio, we return as base64 WAV
+      return `data:audio/wav;base64,${audioData}`;
+    }
+    return null;
+  } catch (error) {
+    console.error("Gemini TTS Error:", error);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------
 // TTS Endpoint
 // ---------------------------------------------------------
-exports.tts = onRequest({ secrets: [geminiApiKey, googleCloudApiKey] }, (req, res) => {
+exports.tts = onRequest({ secrets: [geminiApiKey] }, (req, res) => {
   cors(req, res, async () => {
     try {
       if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
@@ -57,32 +108,16 @@ exports.tts = onRequest({ secrets: [geminiApiKey, googleCloudApiKey] }, (req, re
       const { text } = req.body;
       if (!text) return res.status(400).json({ error: 'Text is required' });
 
-      // Use efficient fallback for API Key
-      const apiKey = googleCloudApiKey.value() || geminiApiKey.value();
-      if (!apiKey) return res.status(500).json({ error: 'TTS API Key not configured' });
+      const apiKey = geminiApiKey.value();
+      if (!apiKey) return res.status(500).json({ error: 'Gemini API Key not configured' });
 
-      const ssmlText = speechToSSML(text);
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const audio = await generateGeminiTTS(text, genAI);
 
-      const ttsResponse = await fetch(
-        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            input: { ssml: ssmlText },
-            voice: { languageCode: 'en-GB', name: 'en-GB-Neural2-D', ssmlGender: 'MALE' },
-            audioConfig: { audioEncoding: 'MP3', pitch: -3.0, speakingRate: 0.85 }
-          }),
-        }
-      );
-
-      if (ttsResponse.ok) {
-        const ttsData = await ttsResponse.json();
-        res.json({ audio: `data:audio/mpeg;base64,${ttsData.audioContent}` });
+      if (audio) {
+        res.json({ audio });
       } else {
-        const errText = await ttsResponse.text();
-        console.error("TTS API Error:", errText);
-        res.status(500).json({ error: 'TTS generation failed', details: errText });
+        res.status(500).json({ error: 'TTS generation failed' });
       }
     } catch (error) {
       console.error("TTS Error:", error);
@@ -204,45 +239,14 @@ IMPORTANT: Return ONLY the JSON object. No markdown. No asterisks. Break the spe
             return res.status(500).json({ error: 'Failed to parse AI response' });
         }
 
-        // --- Generate Audio for Speech Parts ---
-        const ttsApiKey = googleCloudApiKey.value() || geminiApiKey.value();
+        // --- Generate Audio for Speech Parts using Gemini TTS ---
         const speechParts = jsonResponse.speechParts || [{
             speechTTS: jsonResponse.speechTTS || jsonResponse.speech,
             speechDisplay: jsonResponse.speechDisplay || jsonResponse.speech
         }];
 
         const audioPromises = speechParts.map(async (part) => {
-            const ssmlText = speechToSSML(part.speechTTS || '');
-            try {
-                const ttsResponse = await fetch(
-                    `https://texttospeech.googleapis.com/v1/text:synthesize?key=${ttsApiKey}`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            input: { ssml: ssmlText },
-                            voice: {
-                                languageCode: 'en-GB',
-                                name: 'en-GB-Neural2-D',
-                                ssmlGender: 'MALE'
-                            },
-                            audioConfig: {
-                                audioEncoding: 'MP3',
-                                pitch: -2.0,
-                                speakingRate: 1.15
-                            }
-                        }),
-                    }
-                );
-                if (ttsResponse.ok) {
-                    const ttsData = await ttsResponse.json();
-                    return `data:audio/mpeg;base64,${ttsData.audioContent}`;
-                }
-                return null;
-            } catch (e) {
-                console.error("TTS Loop Error", e);
-                return null;
-            }
+            return generateGeminiTTS(part.speechTTS || '', genAI);
         });
 
         const audioResults = await Promise.all(audioPromises);

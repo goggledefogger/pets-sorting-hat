@@ -16,75 +16,187 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 app.use(express.json());
 
-// Convert markup tags to SSML for WaveNet with emotional expression
-function speechToSSML(text) {
-  let ssml = text
-    .replace(/\*/g, '') // Remove asterisks
-    // House Reveals - MAX EXCITEMENT
-    .replace(/GRYFFINDOR!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">GRYFFINDOR!</emphasis></prosody>')
-    .replace(/SLYTHERIN!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">SLYTHERIN!</emphasis></prosody>')
-    .replace(/RAVENCLAW!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">RAVENCLAW!</emphasis></prosody>')
-    .replace(/HUFFLEPUFF!/gi, '<prosody pitch="+4st" rate="0.9" volume="x-loud"><emphasis level="strong">HUFFLEPUFF!</emphasis></prosody>')
-    // Voice acting sounds/actions
-    .replace(/\[sigh\]/gi, '<break time="200ms"/><prosody pitch="-1st" rate="slow">hmm</prosody><break time="300ms"/>')
-    .replace(/Hmm\.\.\./gi, '<prosody pitch="-2st" rate="0.7" volume="soft">Hmm...</prosody><break time="400ms"/>')
-    .replace(/Let me see\.\.\./gi, '<prosody pitch="-1st" rate="0.8">Let me see...</prosody><break time="300ms"/>')
-    .replace(/\[chuckle\]/gi, '<break time="100ms"/><prosody pitch="+1st">heh</prosody><break time="200ms"/>')
-    .replace(/\[pause\]/gi, '<break time="600ms"/>')
-    .replace(/\[short pause\]/gi, '<break time="400ms"/>')
-    .replace(/\[uhm\]/gi, '<break time="200ms"/>')
-    // Style modifiers - wrap following text in prosody
-    .replace(/\[slowly\]\s*([^.!?]+[.!?])/gi, '<prosody rate="slow">$1</prosody>')
-    .replace(/\[excited\]\s*([^.!?]+[.!?])/gi, '<prosody rate="fast" pitch="+2st">$1</prosody>')
-    .replace(/\[whisper\]\s*([^.!?]+[.!?])/gi, '<prosody volume="soft" rate="slow">$1</prosody>')
-    // Pauses for punctuation
-    .replace(/\.\.\./g, '<break time="500ms"/>')
-    // Emphasis for dramatic words
-    .replace(/EXACTLY/gi, '<emphasis level="strong">exactly</emphasis>')
-    .replace(/YES/gi, '<emphasis level="moderate">Yes</emphasis>');
+// --- Audio Cache for Static Phrases ---
+// These phrases are used often and don't change, so we pre-generate them
+const audioCache = new Map();
+const STATIC_PHRASES = [
+  // Intro/Navigation phrases
+  "First, let me get a good look at you...",
+  "Hmm, interesting appearance. Now, tell me about your personality.",
+  // Thinking phrases
+  "Hmm... let me see...",
+  "Analyzing the aura...",
+  "Interesting features...",
+  "Digging into the soul...",
+  // Fallback phrases
+  "Welcome to the Hogwarts Pet Sorting Ceremony!"
+];
 
-  // Wrap in speak tags with theatrical delivery - faster rate
-  return `<speak><prosody rate="110%" pitch="-2st">${ssml}</prosody></speak>`;
+// Convert raw PCM audio data to WAV format
+// Gemini TTS returns raw PCM (Linear16, 24kHz, mono) which browsers can't play directly
+function pcmToWav(pcmData, sampleRate = 24000, numChannels = 1, bitsPerSample = 16) {
+  const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = pcmData.length;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const buffer = Buffer.alloc(totalSize);
+
+  // RIFF header
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(totalSize - 8, 4); // File size minus RIFF header
+  buffer.write('WAVE', 8);
+
+  // fmt  subchunk
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+  buffer.writeUInt16LE(1, 20); // AudioFormat (1 = PCM)
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+
+  // data subchunk
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  // Copy PCM data after header
+  pcmData.copy(buffer, headerSize);
+
+  return buffer;
 }
 
-// TTS endpoint using WaveNet with SSML support for dramatic pauses
+// Sorting Hat TTS Voice Configuration for Gemini 2.5 Flash TTS
+const SORTING_HAT_TTS_PROMPT = `# AUDIO PROFILE: The Sorting Hat
+## Ancient, Theatrical Wizard Artifact
+
+## THE SCENE
+A grand candlelit hall at Hogwarts. The ancient Sorting Hat sits atop a creature's head, reading their very soul. The atmosphere is magical, suspenseful, and slightly whimsical.
+
+### DIRECTOR'S NOTES
+Style:
+- Theatrical and dramatic with a heart of gold
+- Dry British wit, slightly pompous but warm
+- Build suspense naturally, savoring each revelation
+- "Vocal smile" when amused, gravitas when pronouncing judgment
+- Deep, resonant voice befitting a 1,000-year-old magical artifact
+
+Pacing:
+- Deliberate and unhurried for observations ("Hmm... most curious...")
+- Quicken with excitement during discoveries
+- Slow, dramatic pause before revealing the house name
+- Crescendo to a powerful, triumphant proclamation for house announcements (GRYFFINDOR!, SLYTHERIN!, etc.)
+
+Accent: Refined British, ancient and timeless
+
+#### TRANSCRIPT
+`;
+
+// Generate TTS audio using Gemini 2.5 Flash TTS with retry logic
+async function generateGeminiTTS(text, genAI, retryCount = 0) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 5000; // 5 seconds base delay
+
+  try {
+    // Clean up any markup tags from the text (they were for SSML, not needed now)
+    const cleanText = text
+      .replace(/\[sigh\]/gi, '*sighs thoughtfully*')
+      .replace(/\[chuckle\]/gi, '*chuckles*')
+      .replace(/\[pause\]/gi, '...')
+      .replace(/\[short pause\]/gi, '...')
+      .replace(/\[uhm\]/gi, 'um')
+      .replace(/\[slowly\]/gi, '')
+      .replace(/\[excited\]/gi, '')
+      .replace(/\[whisper\]/gi, '')
+      .replace(/\*/g, '');
+
+    console.log(`[TTS] Generating audio for text (${cleanText.length} chars): "${cleanText.substring(0, 50)}..."`);
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash-preview-tts"
+    });
+
+    const result = await model.generateContent({
+      contents: [{
+        role: 'user',
+        parts: [{ text: SORTING_HAT_TTS_PROMPT + cleanText }]
+      }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: 'Charon' // Deep, dramatic voice for the Sorting Hat
+            }
+          }
+        }
+      }
+    });
+
+    const response = await result.response;
+    console.log(`[TTS] Response received, checking for audio data...`);
+
+    const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const mimeType = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+
+    if (audioData) {
+      console.log(`[TTS] ✅ Audio generated successfully (mimeType: ${mimeType}, size: ${audioData.length} bytes)`);
+
+      // Gemini returns raw PCM (Linear16, 24kHz, mono) - convert to WAV for browser playback
+      const pcmBuffer = Buffer.from(audioData, 'base64');
+      const wavBuffer = pcmToWav(pcmBuffer, 24000, 1, 16);
+      const wavBase64 = wavBuffer.toString('base64');
+
+      console.log(`[TTS] 🎵 Converted to WAV (${wavBuffer.length} bytes)`);
+      return `data:audio/wav;base64,${wavBase64}`;
+    }
+
+    console.error(`[TTS] ❌ No audio data in response:`, JSON.stringify(response, null, 2));
+    return null;
+  } catch (error) {
+    console.error(`[TTS] ❌ Error (attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error.message);
+
+    // Retry on rate limit (429) or server errors (5xx)
+    if ((error.status === 429 || error.status >= 500) && retryCount < MAX_RETRIES) {
+      const delay = RETRY_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff
+      console.log(`[TTS] ⏳ Retrying in ${delay / 1000}s...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateGeminiTTS(text, genAI, retryCount + 1);
+    }
+
+    console.error("[TTS] ❌ Final error:", error);
+    return null;
+  }
+}
+
+// TTS endpoint using Gemini 2.5 Flash TTS
 app.post('/api/tts', async (req, res) => {
   try {
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
 
-    const ttsApiKey = process.env.GOOGLE_CLOUD_API_KEY || process.env.GEMINI_API_KEY;
-    if (!ttsApiKey) return res.status(500).json({ error: 'TTS API key not configured' });
+    // Check cache first for instant response
+    if (audioCache.has(text)) {
+      console.log(`[TTS] ⚡ Cache HIT for: "${text.substring(0, 30)}..."`);
+      return res.json({ audio: audioCache.get(text) });
+    }
 
-    const ssmlText = speechToSSML(text);
+    console.log(`[TTS] Cache MISS for: "${text.substring(0, 30)}..."`);
 
-    const ttsResponse = await fetch(
-      `https://texttospeech.googleapis.com/v1/text:synthesize?key=${ttsApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: { ssml: ssmlText },
-          voice: {
-            languageCode: 'en-GB',
-            name: 'en-GB-Neural2-D', // Neural2 voice - more natural than Wavenet
-            ssmlGender: 'MALE'
-          },
-          audioConfig: {
-            audioEncoding: 'MP3',
-            pitch: -3.0, // Lower pitch for ancient wizard
-            speakingRate: 0.85 // Slower for dramatic effect
-          }
-        }),
-      }
-    );
+    const genAI = getGenAI();
+    if (!genAI) {
+      return res.status(500).json({ error: 'Gemini API Key not configured' });
+    }
 
-    if (ttsResponse.ok) {
-      const ttsData = await ttsResponse.json();
-      res.json({ audio: `data:audio/mpeg;base64,${ttsData.audioContent}` });
+    const audio = await generateGeminiTTS(text, genAI);
+
+    if (audio) {
+      // Cache the result for future requests
+      audioCache.set(text, audio);
+      res.json({ audio });
     } else {
-      const error = await ttsResponse.text();
-      console.error("TTS API Error:", error);
       res.status(500).json({ error: 'TTS generation failed' });
     }
   } catch (error) {
@@ -190,9 +302,7 @@ IMPORTANT: Return ONLY the JSON object. No markdown. No asterisks. Break the spe
       return res.status(500).json({ error: 'Failed to parse AI response', raw: text });
     }
 
-    // Generate Audio for EACH part in parallel
-    const ttsApiKey = process.env.GOOGLE_CLOUD_API_KEY || process.env.GEMINI_API_KEY;
-
+    // Generate Audio for EACH part SEQUENTIALLY to avoid rate limits (10 req/min)
     // Ensure speechParts exists (fallback for older models/prompts)
     const speechParts = jsonResponse.speechParts || [
       {
@@ -201,44 +311,20 @@ IMPORTANT: Return ONLY the JSON object. No markdown. No asterisks. Break the spe
       }
     ];
 
-    const audioPromises = speechParts.map(async (part) => {
-      const ssmlText = speechToSSML(part.speechTTS || '');
-      try {
-        const ttsResponse = await fetch(
-          `https://texttospeech.googleapis.com/v1/text:synthesize?key=${ttsApiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              input: { ssml: ssmlText },
-              voice: {
-                languageCode: 'en-GB',
-                name: 'en-GB-Neural2-D',
-                ssmlGender: 'MALE'
-              },
-              audioConfig: {
-                audioEncoding: 'MP3',
-                pitch: -2.0,
-                speakingRate: 1.15
-              }
-            }),
-          }
-        );
+    console.log(`[SORT] Generating audio for ${speechParts.length} speech parts...`);
 
-        if (ttsResponse.ok) {
-          const ttsData = await ttsResponse.json();
-          return `data:audio/mpeg;base64,${ttsData.audioContent}`;
-        } else {
-          console.error("Google TTS API Error:", await ttsResponse.text());
-          return null;
-        }
-      } catch (audioError) {
-        console.error("Audio generation failed:", audioError);
-        return null;
+    // Process sequentially instead of in parallel to avoid rate limits
+    const audioResults = [];
+    for (let i = 0; i < speechParts.length; i++) {
+      console.log(`[SORT] Processing speech part ${i + 1}/${speechParts.length}...`);
+      const audio = await generateGeminiTTS(speechParts[i].speechTTS || '', genAI);
+      audioResults.push(audio);
+
+      // Add a small delay between requests to respect rate limits
+      if (i < speechParts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    });
-
-    const audioResults = await Promise.all(audioPromises);
+    }
 
     // Combine audio with text parts
     const finalParts = speechParts.map((part, index) => ({
@@ -258,6 +344,45 @@ IMPORTANT: Return ONLY the JSON object. No markdown. No asterisks. Break the spe
   }
 });
 
+// Pre-warm cache with static phrases (runs in background after server starts)
+async function prewarmCache() {
+  const genAI = getGenAI();
+  if (!genAI) {
+    console.log('[CACHE] ⚠️ No API key, skipping cache pre-warm');
+    return;
+  }
+
+  console.log(`[CACHE] 🔥 Pre-warming cache with ${STATIC_PHRASES.length} phrases...`);
+
+  for (let i = 0; i < STATIC_PHRASES.length; i++) {
+    const phrase = STATIC_PHRASES[i];
+    if (audioCache.has(phrase)) {
+      console.log(`[CACHE] ✓ Already cached: "${phrase.substring(0, 30)}..."`);
+      continue;
+    }
+
+    console.log(`[CACHE] Generating ${i + 1}/${STATIC_PHRASES.length}: "${phrase.substring(0, 30)}..."`);
+    const audio = await generateGeminiTTS(phrase, genAI);
+
+    if (audio) {
+      audioCache.set(phrase, audio);
+      console.log(`[CACHE] ✅ Cached: "${phrase.substring(0, 30)}..."`);
+    } else {
+      console.log(`[CACHE] ❌ Failed: "${phrase.substring(0, 30)}..."`);
+    }
+
+    // Delay between requests to respect rate limits (10 req/min)
+    if (i < STATIC_PHRASES.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+
+  console.log(`[CACHE] ✨ Pre-warm complete! ${audioCache.size} phrases cached.`);
+}
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+
+  // Pre-warm cache in background (don't await, let server start immediately)
+  prewarmCache().catch(err => console.error('[CACHE] Pre-warm error:', err));
 });
