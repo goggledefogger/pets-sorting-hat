@@ -1,11 +1,36 @@
 import React from 'react';
+import HatVisualCustom from './hat-visuals/HatVisualCustom';
+import HatVisualProcedural from './hat-visuals/HatVisualProcedural';
+import HatVisualPng from './hat-visuals/HatVisualPng';
 
-const HouseReveal = ({ house, petPhoto, onReset }) => {
+const HouseReveal = ({ house, petPhoto, onReset, visualMode = 'procedural', mouthOpenAmount = 0, isSpeaking = false }) => {
+  const hatState = isSpeaking ? 'speaking' : 'idle';
+  const scale = 1 + (mouthOpenAmount * 0.03);
+
+  const renderHatVisual = () => {
+    switch (visualMode) {
+      case 'procedural':
+        return <HatVisualProcedural state={hatState} mouthOpenAmount={mouthOpenAmount} scale={scale} size={150} />;
+      case 'png':
+        return <HatVisualPng state={hatState} mouthOpenAmount={mouthOpenAmount} size={150} />;
+      case 'custom':
+      default:
+        return <HatVisualCustom state={hatState} scale={scale} size={150} />;
+    }
+  };
+
   return (
     <div className="house-reveal" style={{
       textAlign: 'center',
       animation: 'fadeIn 1s ease-in'
     }}>
+      {/* Dancing Hat */}
+      <div className="dancing-hat" style={{
+        marginBottom: '1rem'
+      }}>
+        {renderHatVisual()}
+      </div>
+
       <h1 style={{
         fontSize: '4rem',
         color: house.color,

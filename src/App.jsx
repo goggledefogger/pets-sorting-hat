@@ -47,6 +47,7 @@ function App() {
   const [hatPosition, setHatPosition] = useState({ x: 0, y: 0 }); // {x, y} offset
   const [visualMode, setVisualMode] = useState('procedural'); // 'custom', 'procedural', 'png'
   const [showSubtitles, setShowSubtitles] = useState(false); // Subtitles hidden by default
+  const [revealReady, setRevealReady] = useState(false); // Wait for audio before showing reveal
   const audioRef = useRef(new Audio());
 
   // Real-time lip sync
@@ -97,12 +98,14 @@ function App() {
       } else {
         // Final speech done, go to reveal
         setStep('REVEAL');
+        setRevealReady(false); // Wait for audio to load
         // Announce the house name!
         if (house) {
           setHatMessage(house.name.toUpperCase() + "!");
           setAudioSrc(null); // Clear previous audio so it fetches new TTS
         } else {
           setHatMessage("");
+          setRevealReady(true); // No audio needed
         }
       }
     }
@@ -131,6 +134,12 @@ function App() {
 
     const playAudio = (src) => {
       audioRef.current.src = src;
+      audioRef.current.oncanplaythrough = () => {
+        // Audio is ready to play - now show reveal if we're in REVEAL step
+        if (step === 'REVEAL') {
+          setRevealReady(true);
+        }
+      };
       audioRef.current.onplay = () => setIsSpeaking(true);
       audioRef.current.onended = () => {
         setIsSpeaking(false);
@@ -258,6 +267,7 @@ function App() {
     setAudioSrc(null);
     setAudioSrc(null);
     setHatPosition({ x: 0, y: 0 });
+    setRevealReady(false);
     audioRef.current.pause();
   };
 
@@ -479,7 +489,21 @@ function App() {
         )}
 
         {step === 'REVEAL' && house && (
-          <HouseReveal house={house} petPhoto={petPhoto} onReset={handleReset} />
+          revealReady ? (
+            <HouseReveal
+              house={house}
+              petPhoto={petPhoto}
+              onReset={handleReset}
+              visualMode={visualMode}
+              mouthOpenAmount={mouthOpenAmount}
+              isSpeaking={isSpeaking}
+            />
+          ) : (
+            <div style={{ textAlign: 'center', padding: '3rem' }}>
+              <div className="floating" style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎩</div>
+              <p style={{ fontSize: '1.5rem', color: '#D3A625' }}>The Hat is ready to announce...</p>
+            </div>
+          )
         )}
       </div>
     </div>
