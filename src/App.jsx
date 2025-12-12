@@ -123,20 +123,38 @@ function App() {
   }, [finalSpeechParts, step, showingFinalSpeech, phraseIndex, isSpeaking]);
 
   // TTS: Play audio for current hatMessage
+  const ttsAbortControllerRef = useRef(null);
+  const currentRequestIdRef = useRef(0);
+
   useEffect(() => {
     if (!hatMessage || !hasUserInteracted) {
       return;
     }
 
-    // Cancel any ongoing audio
+    // Cancel any ongoing audio and pending fetch
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
 
+    // Abort any pending TTS request
+    if (ttsAbortControllerRef.current) {
+      ttsAbortControllerRef.current.abort();
+    }
+    ttsAbortControllerRef.current = new AbortController();
+
+    // Track this request with a unique ID
+    const requestId = ++currentRequestIdRef.current;
+
     const playAudio = (src) => {
+      // Only play if this is still the current request
+      if (requestId !== currentRequestIdRef.current) {
+        console.log('[TTS] Skipping stale audio response');
+        return;
+      }
+
       audioRef.current.src = src;
       audioRef.current.oncanplaythrough = () => {
         // Audio is ready to play - now show reveal if we're in REVEAL step
-        if (step === 'REVEAL') {
+        if (step === 'REVEAL' && requestId === currentRequestIdRef.current) {
           setRevealReady(true);
         }
       };
@@ -156,6 +174,10 @@ function App() {
         }
       };
       audioRef.current.play().catch(e => {
+        // Ignore AbortError - it's expected when switching audio
+        if (e.name === 'AbortError') {
+          return;
+        }
         console.error("Play error:", e);
         setIsSpeaking(false);
         // Still advance on error after a delay
@@ -173,7 +195,8 @@ function App() {
       fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: hatMessage })
+        body: JSON.stringify({ text: hatMessage }),
+        signal: ttsAbortControllerRef.current.signal
       })
         .then(res => res.json())
         .then(data => {
@@ -181,21 +204,32 @@ function App() {
             playAudio(data.audio);
           } else {
             // If no audio, wait a bit then advance (if in thinking mode)
-            if (step === 'THINKING') {
+            if (step === 'THINKING' && requestId === currentRequestIdRef.current) {
               setTimeout(advanceSequence, 2000); // Longer delay for reading
             } else {
               setIsSpeaking(false);
             }
           }
         })
-        .catch(() => {
-          if (step === 'THINKING') {
+        .catch((err) => {
+          // Ignore abort errors
+          if (err.name === 'AbortError') {
+            return;
+          }
+          if (step === 'THINKING' && requestId === currentRequestIdRef.current) {
             setTimeout(advanceSequence, 2000);
           } else {
             setIsSpeaking(false);
           }
         });
     }
+
+    // Cleanup on unmount or before next effect
+    return () => {
+      if (ttsAbortControllerRef.current) {
+        ttsAbortControllerRef.current.abort();
+      }
+    };
   }, [hatMessage, hasUserInteracted, step, showingFinalSpeech, audioSrc]);
 
   const startSorting = async (traits) => {
