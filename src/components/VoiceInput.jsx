@@ -1,49 +1,68 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const VoiceInput = ({ onVoiceInput, onSkip }) => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
-  const [recognition, setRecognition] = useState(null);
-  const [error, setError] = useState(null);
+  const [manualText, setManualText] = useState('');
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const recognitionRef = useRef(null);
 
+  // Check for speech recognition support and set up once
   useEffect(() => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
-      recognitionInstance.continuous = false;
-      recognitionInstance.interimResults = false;
-      recognitionInstance.lang = 'en-US';
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-      recognitionInstance.onstart = () => setIsListening(true);
-      recognitionInstance.onend = () => setIsListening(false);
-      recognitionInstance.onerror = (event) => {
-        setError('Error occurred in recognition: ' + event.error);
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
         setIsListening(false);
       };
-      recognitionInstance.onresult = (event) => {
-        const text = event.results[0][0].transcript;
+
+      recognition.onresult = (event) => {
+        const result = event.results[event.results.length - 1];
+        const text = result[0].transcript;
         setTranscript(text);
-        onVoiceInput(text);
+
+        // If this is the final result, submit it
+        if (result.isFinal) {
+          onVoiceInput(text);
+        }
       };
 
-      setRecognition(recognitionInstance);
-    } else {
-      setError('Browser does not support Speech Recognition.');
+      recognitionRef.current = recognition;
     }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
   }, [onVoiceInput]);
 
   const startListening = () => {
-    if (recognition) {
+    if (recognitionRef.current && !isListening) {
       try {
-        recognition.start();
-        setError(null);
+        setTranscript('');
+        recognitionRef.current.start();
       } catch (e) {
-        console.error(e);
+        console.error('Failed to start speech recognition:', e);
       }
     }
   };
 
-  const [manualText, setManualText] = useState('');
+  const stopListening = () => {
+    if (recognitionRef.current && isListening) {
+      recognitionRef.current.stop();
+    }
+  };
 
   const handleManualSubmit = () => {
     if (manualText.trim()) {
@@ -58,26 +77,30 @@ const VoiceInput = ({ onVoiceInput, onSkip }) => {
         "Are they brave? Cunning? Loyal? Or perhaps wise?"
       </p>
 
-      {error && (
-        <div style={{ color: '#ff6b6b', marginBottom: '1rem', background: 'rgba(255,0,0,0.1)', padding: '0.5rem', borderRadius: '4px' }}>
-          {error}
-          <br/>
-          <small>Please type your description below instead.</small>
+      {/* Voice input - only show if browser supports it */}
+      {speechSupported && (
+        <div style={{ margin: '2rem 0' }}>
+          <button
+            onClick={isListening ? stopListening : startListening}
+            className={isListening ? 'glow' : ''}
+            style={{
+              background: isListening ? '#740001' : undefined,
+              transform: isListening ? 'scale(1.05)' : undefined
+            }}
+          >
+            {isListening ? '🔴 Stop Recording' : '🎙️ Start Speaking'}
+          </button>
+          {isListening && (
+            <p style={{ marginTop: '0.5rem', color: '#D3A625', fontStyle: 'italic' }}>
+              {transcript || 'Listening...'}
+            </p>
+          )}
         </div>
       )}
 
-      <div style={{ margin: '2rem 0' }}>
-        <button
-          onClick={startListening}
-          disabled={isListening}
-          className={isListening ? 'glow' : ''}
-        >
-          {isListening ? '👂 Listening...' : '🎙️ Start Speaking'}
-        </button>
-      </div>
-
-      <div style={{ margin: '2rem 0', borderTop: '1px solid #333', paddingTop: '1rem' }}>
-        <p style={{ fontSize: '0.9rem', color: '#888' }}>Or type description:</p>
+      {/* Manual text input */}
+      <div style={{ margin: '2rem 0', borderTop: speechSupported ? '1px solid #333' : 'none', paddingTop: speechSupported ? '1rem' : 0 }}>
+        {speechSupported && <p style={{ fontSize: '0.9rem', color: '#888' }}>Or type description:</p>}
         <textarea
           value={manualText}
           onChange={(e) => setManualText(e.target.value)}
@@ -100,15 +123,10 @@ const VoiceInput = ({ onVoiceInput, onSkip }) => {
         </button>
       </div>
 
-      {transcript && (
-        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.1)', borderRadius: '8px' }}>
-          <p>"{transcript}"</p>
-        </div>
-      )}
-
+      {/* Skip button */}
       <div style={{ marginTop: '1rem' }}>
         <button onClick={() => onSkip('brave loyal smart')} style={{ fontSize: '0.8em', opacity: 0.7 }}>
-          (Skip / No Mic)
+          (Skip - Use Default Traits)
         </button>
       </div>
     </div>

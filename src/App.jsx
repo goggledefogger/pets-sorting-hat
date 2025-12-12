@@ -46,6 +46,7 @@ function App() {
   const [audioSrc, setAudioSrc] = useState(null);
   const [hatPosition, setHatPosition] = useState({ x: 0, y: 0 }); // {x, y} offset
   const [visualMode, setVisualMode] = useState('procedural'); // 'custom', 'procedural', 'png'
+  const [showSubtitles, setShowSubtitles] = useState(false); // Subtitles hidden by default
   const audioRef = useRef(new Audio());
 
   // Real-time lip sync
@@ -297,7 +298,24 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Visual Mode Selector */}
+      {/* Controls in corners */}
+      <div style={{ position: 'absolute', top: '10px', left: '10px', zIndex: 1000 }}>
+        <button
+          onClick={() => setShowSubtitles(!showSubtitles)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '5px',
+            background: showSubtitles ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.3)',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            color: showSubtitles ? '#000' : '#fff'
+          }}
+          title={showSubtitles ? 'Hide subtitles' : 'Show subtitles'}
+        >
+          {showSubtitles ? '📝 Subtitles ON' : '📝 Subtitles OFF'}
+        </button>
+      </div>
       <div style={{ position: 'absolute', top: '10px', right: '10px', zIndex: 1000 }}>
         <select
           value={visualMode}
@@ -430,28 +448,30 @@ function App() {
 
             {step === 'THINKING' && (
               <div className="thinking" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div className="thinking-text" style={{
-                  fontSize: '1.5rem',
-                  marginBottom: '1rem',
-                  maxWidth: '600px',
-                  width: '90%',
-                  background: 'rgba(0, 0, 0, 0.6)',
-                  padding: '1.5rem',
-                  borderRadius: '15px',
-                  border: '1px solid rgba(255, 255, 255, 0.2)',
-                  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-                  backdropFilter: 'blur(5px)',
-                  color: '#fff',
-                  fontFamily: '"Times New Roman", serif',
-                  fontStyle: 'italic',
-                  lineHeight: '1.4',
-                  minHeight: '120px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                    "{hatMessage}"
-                </div>
+                {showSubtitles && (
+                  <div className="thinking-text" style={{
+                    fontSize: '1.5rem',
+                    marginBottom: '1rem',
+                    maxWidth: '600px',
+                    width: '90%',
+                    background: 'rgba(0, 0, 0, 0.6)',
+                    padding: '1.5rem',
+                    borderRadius: '15px',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                    backdropFilter: 'blur(5px)',
+                    color: '#fff',
+                    fontFamily: '"Times New Roman", serif',
+                    fontStyle: 'italic',
+                    lineHeight: '1.4',
+                    minHeight: '120px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                      "{hatMessage}"
+                  </div>
+                )}
                 <p style={{ opacity: 0.7, fontSize: '0.9rem', letterSpacing: '1px', textTransform: 'uppercase' }}>The Hat is delving into your pet's mind...</p>
               </div>
             )}
