@@ -132,6 +132,17 @@ function App() {
       return;
     }
 
+    // If audio is unavailable (quota exhausted), skip TTS entirely
+    // Just wait for reading and then advance (subtitles will be shown)
+    if (audioUnavailable) {
+      if (step === 'THINKING') {
+        setTimeout(advanceSequence, 2500);
+      } else if (step === 'REVEAL') {
+        setRevealReady(true);
+      }
+      return;
+    }
+
     // Cancel any ongoing audio and pending fetch
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
