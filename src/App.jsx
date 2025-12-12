@@ -500,7 +500,16 @@ function App() {
             />
           ) : (
             <div style={{ textAlign: 'center', padding: '3rem' }}>
-              <div className="floating" style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎩</div>
+              <div className="floating">
+                <SortingHat
+                  state="thinking"
+                  message={null}
+                  isSpeaking={false}
+                  mouthOpenAmount={0}
+                  size={150}
+                  visualMode={visualMode}
+                />
+              </div>
               <p style={{ fontSize: '1.5rem', color: '#D3A625' }}>The Hat is ready to announce...</p>
             </div>
           )
