@@ -21,6 +21,42 @@ const fs = require("fs");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const googleCloudApiKey = defineSecret("GOOGLE_CLOUD_API_KEY");
 
+// Convert raw PCM audio data to WAV format
+// Gemini TTS returns raw PCM (Linear16, 24kHz, mono) which browsers can't play directly
+function pcmToWav(pcmData, sampleRate = 24000, numChannels = 1, bitsPerSample = 16) {
+  const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = pcmData.length;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+
+  const buffer = Buffer.alloc(totalSize);
+
+  // RIFF header
+  buffer.write('RIFF', 0);
+  buffer.writeUInt32LE(totalSize - 8, 4);
+  buffer.write('WAVE', 8);
+
+  // fmt subchunk
+  buffer.write('fmt ', 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(numChannels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+
+  // data subchunk
+  buffer.write('data', 36);
+  buffer.writeUInt32LE(dataSize, 40);
+
+  // Copy PCM data after header
+  pcmData.copy(buffer, headerSize);
+
+  return buffer;
+}
+
 // Sorting Hat TTS Voice Configuration for Gemini 2.5 Flash TTS
 const SORTING_HAT_TTS_PROMPT = `# AUDIO PROFILE: The Sorting Hat
 ## Ancient, Theatrical Wizard Artifact
@@ -87,8 +123,12 @@ async function generateGeminiTTS(text, genAI) {
     const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
     if (audioData) {
-      // Gemini TTS returns PCM audio, we return as base64 WAV
-      return `data:audio/wav;base64,${audioData}`;
+      // Gemini TTS returns raw PCM - convert to WAV for browser playback
+      const pcmBuffer = Buffer.from(audioData, 'base64');
+      const wavBuffer = pcmToWav(pcmBuffer, 24000, 1, 16);
+      const wavBase64 = wavBuffer.toString('base64');
+      console.log(`[TTS] 🎵 Converted to WAV (${wavBuffer.length} bytes)`);
+      return `data:audio/wav;base64,${wavBase64}`;
     }
     return null;
   } catch (error) {

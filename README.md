@@ -50,12 +50,6 @@ This approach deploys the **Frontend** (Hosting) and **Backend** (Functions) tog
     firebase deploy
     ```
 
-### Option 2: GitHub Pages (Frontend Only)
-**⚠️ LIMITATION**: GitHub Pages is static-only. The AI/Voice features will **NOT** work unless you host the backend properly.
-```bash
-npm run deploy
-```
-
 ## 🛠️ Local Setup
 
 1.  **Clone the repository**

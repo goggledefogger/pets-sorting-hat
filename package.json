@@ -16,7 +16,7 @@
     "deploy": "firebase deploy",
     "setup-secrets": "./setup_secrets.sh"
   },
-  "homepage": "https://goggledefogger.github.io/pets-sorting-hat",
+
   "dependencies": {
     "@google-cloud/text-to-speech": "^6.4.0",
     "@google/generative-ai": "^0.24.1",
