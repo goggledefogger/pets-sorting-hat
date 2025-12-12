@@ -499,18 +499,57 @@ function App() {
               isSpeaking={isSpeaking}
             />
           ) : (
-            <div style={{ textAlign: 'center', padding: '3rem' }}>
-              <div className="floating">
+            <div style={{
+              textAlign: 'center',
+              padding: '4rem 2rem',
+              background: 'radial-gradient(ellipse at center, rgba(211, 166, 37, 0.1) 0%, transparent 70%)',
+              borderRadius: '20px',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              {/* Magical sparkle effect */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'radial-gradient(circle at 20% 30%, rgba(255, 215, 0, 0.15) 0%, transparent 25%), radial-gradient(circle at 80% 70%, rgba(255, 215, 0, 0.1) 0%, transparent 20%)',
+                pointerEvents: 'none'
+              }} />
+
+              <div className="floating" style={{ marginBottom: '1.5rem' }}>
                 <SortingHat
                   state="thinking"
                   message={null}
                   isSpeaking={false}
                   mouthOpenAmount={0}
-                  size={150}
+                  size={180}
                   visualMode={visualMode}
                 />
               </div>
-              <p style={{ fontSize: '1.5rem', color: '#D3A625' }}>The Hat is ready to announce...</p>
+
+              <h2 style={{
+                fontSize: '1.8rem',
+                color: '#D3A625',
+                textShadow: '0 0 20px rgba(211, 166, 37, 0.5), 0 2px 4px rgba(0,0,0,0.3)',
+                fontFamily: '"Times New Roman", serif',
+                fontWeight: 'normal',
+                fontStyle: 'italic',
+                margin: '0 0 0.5rem 0',
+                letterSpacing: '2px'
+              }}>
+                The decision is made...
+              </h2>
+
+              <p style={{
+                fontSize: '1rem',
+                color: 'rgba(255, 255, 255, 0.6)',
+                textTransform: 'uppercase',
+                letterSpacing: '3px'
+              }}>
+                Prepare for the announcement
+              </p>
             </div>
           )
         )}
