@@ -375,14 +375,7 @@ function App() {
                 <ImageUpload onCapture={handlePhotoCaptured} />
               </div>
             </div>
-            <div style={{ marginTop: '2rem', borderTop: '1px solid #333', paddingTop: '1rem' }}>
-              <button
-                onClick={() => handlePhotoCaptured('/sorting_hat.png')}
-                style={{ background: '#444', fontSize: '0.9rem' }}
-              >
-                🧪 Use Mock Photo (Dev Mode)
-              </button>
-            </div>
+
           </div>
         )}
 
