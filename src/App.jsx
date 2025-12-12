@@ -48,6 +48,7 @@ function App() {
   const [visualMode, setVisualMode] = useState('procedural'); // 'custom', 'procedural', 'png'
   const [showSubtitles, setShowSubtitles] = useState(false); // Subtitles hidden by default
   const [revealReady, setRevealReady] = useState(false); // Wait for audio before showing reveal
+  const [audioUnavailable, setAudioUnavailable] = useState(false); // TTS quota exhausted fallback
   const audioRef = useRef(new Audio());
 
   // Real-time lip sync
@@ -198,14 +199,23 @@ function App() {
         body: JSON.stringify({ text: hatMessage }),
         signal: ttsAbortControllerRef.current.signal
       })
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) {
+            // TTS service returned error (likely quota exhausted)
+            throw new Error('TTS_UNAVAILABLE');
+          }
+          return res.json();
+        })
         .then(data => {
           if (data.audio) {
             playAudio(data.audio);
           } else {
-            // If no audio, wait a bit then advance (if in thinking mode)
+            // TTS unavailable - enable subtitles fallback
+            handleTTSUnavailable();
             if (step === 'THINKING' && requestId === currentRequestIdRef.current) {
-              setTimeout(advanceSequence, 2000); // Longer delay for reading
+              setTimeout(advanceSequence, 2500); // Longer delay for reading
+            } else if (step === 'REVEAL') {
+              setRevealReady(true);
             } else {
               setIsSpeaking(false);
             }
@@ -216,8 +226,12 @@ function App() {
           if (err.name === 'AbortError') {
             return;
           }
+          // Enable subtitles fallback on error
+          handleTTSUnavailable();
           if (step === 'THINKING' && requestId === currentRequestIdRef.current) {
-            setTimeout(advanceSequence, 2000);
+            setTimeout(advanceSequence, 2500);
+          } else if (step === 'REVEAL') {
+            setRevealReady(true);
           } else {
             setIsSpeaking(false);
           }
@@ -231,6 +245,16 @@ function App() {
       }
     };
   }, [hatMessage, hasUserInteracted, step, showingFinalSpeech, audioSrc]);
+
+  // Handle TTS unavailable (quota exhausted) - enable subtitles fallback
+  const handleTTSUnavailable = () => {
+    if (!audioUnavailable) {
+      setAudioUnavailable(true);
+      setShowSubtitles(true);
+      setIsSpeaking(false);
+      console.log('[TTS] Audio unavailable - enabling subtitles fallback');
+    }
+  };
 
   const startSorting = async (traits) => {
     // Reset state for new sorting
@@ -371,6 +395,44 @@ function App() {
           <option value="png">Original PNG</option>
         </select>
       </div>
+
+      {/* Audio Unavailable Warning Banner */}
+      {audioUnavailable && (
+        <div style={{
+          position: 'fixed',
+          top: '50px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'linear-gradient(135deg, #ff6b6b, #ee5a5a)',
+          color: '#fff',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+          zIndex: 2000,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          maxWidth: '90%',
+          fontSize: '0.9rem'
+        }}>
+          <span>🔇</span>
+          <span>Audio unavailable (quota reached). Subtitles enabled.</span>
+          <button
+            onClick={() => setAudioUnavailable(false)}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: '#fff',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.8rem'
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Default Top Hat - Only for INTRO and CAMERA */}
       {(step === 'INTRO' || step === 'CAMERA') && (
