@@ -5,6 +5,7 @@ const VoiceInput = ({ onVoiceInput, onSkip }) => {
   const [transcript, setTranscript] = useState('');
   const [manualText, setManualText] = useState('');
   const [speechSupported, setSpeechSupported] = useState(false);
+  const [error, setError] = useState(null);
   const recognitionRef = useRef(null);
 
   // Check for speech recognition support and set up once
@@ -18,12 +19,26 @@ const VoiceInput = ({ onVoiceInput, onSkip }) => {
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
-      recognition.onstart = () => setIsListening(true);
+      recognition.onstart = () => {
+        setIsListening(true);
+        setError(null);
+      };
       recognition.onend = () => setIsListening(false);
 
       recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         setIsListening(false);
+
+        // Show user-friendly error messages
+        if (event.error === 'network') {
+          setError('Network error - speech recognition requires internet. Please type instead.');
+        } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+          setError('Microphone permission denied. Please allow access or type instead.');
+        } else if (event.error === 'no-speech') {
+          setError('No speech detected. Try again or type instead.');
+        } else {
+          setError(`Speech error: ${event.error}. Please type instead.`);
+        }
       };
 
       recognition.onresult = (event) => {
@@ -93,6 +108,18 @@ const VoiceInput = ({ onVoiceInput, onSkip }) => {
           {isListening && (
             <p style={{ marginTop: '0.5rem', color: '#D3A625', fontStyle: 'italic' }}>
               {transcript || 'Listening...'}
+            </p>
+          )}
+          {error && (
+            <p style={{
+              marginTop: '0.5rem',
+              color: '#ff6b6b',
+              fontSize: '0.9rem',
+              background: 'rgba(255, 0, 0, 0.1)',
+              padding: '0.5rem',
+              borderRadius: '4px'
+            }}>
+              ⚠️ {error}
             </p>
           )}
         </div>
