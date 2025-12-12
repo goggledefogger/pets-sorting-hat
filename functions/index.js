@@ -21,6 +21,22 @@ const fs = require("fs");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const googleCloudApiKey = defineSecret("GOOGLE_CLOUD_API_KEY");
 
+// --- Audio Cache for TTS ---
+// Cloud Functions can maintain state within a single instance
+// This provides caching for repeated requests during the instance lifecycle
+const audioCache = new Map();
+
+// Static phrases that are frequently used and should be cached
+const STATIC_PHRASES = [
+  "First, let me get a good look at you...",
+  "Hmm, interesting appearance. Now, tell me about your personality.",
+  "Hmm... let me see...",
+  "Analyzing the aura...",
+  "Interesting features...",
+  "Digging into the soul...",
+  "Welcome to the Hogwarts Pet Sorting Ceremony!"
+];
+
 // Convert raw PCM audio data to WAV format
 // Gemini TTS returns raw PCM (Linear16, 24kHz, mono) which browsers can't play directly
 function pcmToWav(pcmData, sampleRate = 24000, numChannels = 1, bitsPerSample = 16) {
@@ -84,7 +100,11 @@ Accent: Refined British, ancient and timeless
 `;
 
 // Generate TTS audio using Gemini 2.5 Flash TTS
-async function generateGeminiTTS(text, genAI) {
+// Includes retry logic for rate limiting
+const MAX_TTS_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
+
+async function generateGeminiTTS(text, genAI, retryCount = 0) {
   try {
     // Clean up any markup tags from the text (they were for SSML, not needed now)
     const cleanText = text
@@ -97,6 +117,8 @@ async function generateGeminiTTS(text, genAI) {
       .replace(/\[excited\]/gi, '')
       .replace(/\[whisper\]/gi, '')
       .replace(/\*/g, '');
+
+    console.log(`[TTS] Generating audio for text (${cleanText.length} chars): "${cleanText.substring(0, 50)}..."`);
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash-preview-tts"
@@ -127,12 +149,24 @@ async function generateGeminiTTS(text, genAI) {
       const pcmBuffer = Buffer.from(audioData, 'base64');
       const wavBuffer = pcmToWav(pcmBuffer, 24000, 1, 16);
       const wavBase64 = wavBuffer.toString('base64');
-      console.log(`[TTS] 🎵 Converted to WAV (${wavBuffer.length} bytes)`);
+      console.log(`[TTS] ✅ Converted to WAV (${wavBuffer.length} bytes)`);
       return `data:audio/wav;base64,${wavBase64}`;
     }
+    console.log('[TTS] ⚠️ No audio data in response');
     return null;
   } catch (error) {
-    console.error("Gemini TTS Error:", error);
+    const statusCode = error.status || error.code;
+    console.error(`[TTS] Error (attempt ${retryCount + 1}/${MAX_TTS_RETRIES + 1}):`, error.message || error);
+
+    // Retry on rate limit (429) or server errors (5xx)
+    if ((statusCode === 429 || statusCode >= 500) && retryCount < MAX_TTS_RETRIES) {
+      const delay = RETRY_DELAY_MS * Math.pow(2, retryCount);
+      console.log(`[TTS] 🔄 Rate limited or server error, retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return generateGeminiTTS(text, genAI, retryCount + 1);
+    }
+
+    console.error("[TTS] ❌ Final error:", error);
     return null;
   }
 }
@@ -148,6 +182,14 @@ exports.tts = onRequest({ secrets: [geminiApiKey] }, (req, res) => {
       const { text } = req.body;
       if (!text) return res.status(400).json({ error: 'Text is required' });
 
+      // Check cache first for instant response
+      if (audioCache.has(text)) {
+        console.log(`[TTS] ⚡ Cache HIT for: "${text.substring(0, 30)}..."`);
+        return res.json({ audio: audioCache.get(text) });
+      }
+
+      console.log(`[TTS] Cache MISS for: "${text.substring(0, 30)}..."`);
+
       const apiKey = geminiApiKey.value();
       if (!apiKey) return res.status(500).json({ error: 'Gemini API Key not configured' });
 
@@ -155,13 +197,16 @@ exports.tts = onRequest({ secrets: [geminiApiKey] }, (req, res) => {
       const audio = await generateGeminiTTS(text, genAI);
 
       if (audio) {
+        // Cache the result for future requests
+        audioCache.set(text, audio);
+        console.log(`[TTS] Cached audio for: "${text.substring(0, 30)}..." (cache size: ${audioCache.size})`);
         res.json({ audio });
       } else {
-        res.status(500).json({ error: 'TTS generation failed' });
+        res.status(500).json({ error: 'TTS generation failed - please try again' });
       }
     } catch (error) {
       console.error("TTS Error:", error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: 'TTS service temporarily unavailable' });
     }
   });
 });
